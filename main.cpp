@@ -20,7 +20,7 @@ typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 
 /* Test Params */
 int size = 2048 * 1024;
-static constexpr int num_requests = 1024;
+static constexpr int num_requests = 100;
 
 /* Wait Functions */
 static __always_inline void umonitor(const volatile void *addr)
@@ -73,7 +73,7 @@ uint64_t after_complete[num_samples];
 
 
 int cur_request = 0;
-dml::handler<dml::mem_copy_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
+dml::handler<dml::batch_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
 int next_response_idx = 0;
 
 coro_t::call_type * c2 = 0;
@@ -109,16 +109,31 @@ void request_fn( coro_t::yield_type &yield){
 
   int next_submit_idx = cur_request;
 
-  auto src_data = std::vector<uint8_t>('a',size);
-  auto dst_data = std::vector<uint8_t>(src_data.size());
+  auto pattern = 0x00ABCDEFABCDEF00;
+  auto src = std::vector<std::uint8_t>(size);
+
+  auto dst1 = std::vector<std::uint8_t>(size, 0u);
+  auto dst2 = std::vector<std::uint8_t>(size, 0u);
+  auto dst3 = std::vector<std::uint8_t>(size);
+
+
+
+  constexpr auto count  = 5u;
+
+  auto sequence = dml::sequence(count, std::allocator<dml::byte_t>());
+  sequence.add(dml::fill, pattern, dml::make_view(src));
+  // sequence.add(dml::nop);
+  sequence.add(dml::mem_move, dml::make_view(src), dml::make_view(dst1));
+  sequence.add(dml::dualcast, dml::make_view(src), dml::make_view(dst2), dml::make_view(dst3));
+  // sequence.add(dml::nop);
+  sequence.add(dml::compare_pattern, pattern, dml::make_view(dst1));
+  sequence.add(dml::compare, dml::make_view(dst2), dml::make_view(dst3));
 
   #ifdef BREAKDOWN
   before_submit[cur_sample] = __rdtsc();
   #endif
 
-  handlers[next_submit_idx] = dml::submit<dml::hardware>(dml::mem_copy,
-                                        dml::make_view(src_data),
-                                        dml::make_view(dst_data));
+  handlers[next_submit_idx] = dml::submit<dml::hardware>(dml::batch, sequence );
 
   cur_request++;
 
