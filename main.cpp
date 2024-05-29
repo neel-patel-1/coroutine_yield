@@ -13,10 +13,13 @@
 #include <boost/bind.hpp>
 
 #include "dml/dml.hpp"
+#include "dml/dml.h"
 typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 
+/* Coroutine for Request 2 */
+
 /* Test Params */
-int size = 4096;
+int size = 2048 * 1024;
 static constexpr int num_requests = 1024;
 
 /* Wait Functions */
@@ -68,13 +71,41 @@ uint64_t before_resume[num_samples];
 uint64_t after_complete[num_samples];
 #endif
 
-/* Event Preempt Signal Test */
+
 int cur_request = 0;
-dml::handler<dml::mem_move_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
+dml::handler<dml::mem_copy_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
 int next_response_idx = 0;
 
+coro_t::call_type * c2 = 0;
+
+
+void request_2_fn( coro_t::yield_type &yield){
+
+
+  #ifdef BREAKDOWN
+  after_yield[cur_sample] = __rdtsc();
+  #endif
+  auto result = handlers[next_response_idx].get();
+  if(result.status != dml::status_code::ok){
+    std::cerr<<"DSA Offload Failed\n";
+    exit(-1);
+  }
+
+  next_response_idx++;
+
+  #ifdef BREAKDOWN
+  before_resume[cur_sample] = __rdtsc();
+  #endif
+  yield();
+
+}
 
 void request_fn( coro_t::yield_type &yield){
+
+  #ifdef BREAKDOWN
+  request_start_time[cur_sample] = __rdtsc();
+  #endif
+
   int next_submit_idx = cur_request;
 
   auto src_data = std::vector<uint8_t>('a',size);
@@ -84,7 +115,7 @@ void request_fn( coro_t::yield_type &yield){
   before_submit[cur_sample] = __rdtsc();
   #endif
 
-  handlers[next_submit_idx] = dml::submit<dml::hardware>(dml::mem_move,
+  handlers[next_submit_idx] = dml::submit<dml::hardware>(dml::mem_copy,
                                         dml::make_view(src_data),
                                         dml::make_view(dst_data));
 
@@ -93,68 +124,24 @@ void request_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   before_yield[cur_sample] = __rdtsc();
   #endif
-  yield();
+  yield( *c2);
   #ifdef BREAKDOWN
+  printf("back\n");
   after_resume[cur_sample] = __rdtsc();
   #endif
-
-
-
-
-}
-
-void scheduler( coro_t::yield_type & yield)
-{
-  coro_t::call_type request_coro{request_fn};
-
-  #ifdef BREAKDOWN
-  request_start_time[cur_sample] = __rdtsc();
-  #endif
-  request_coro();
-  #ifdef BREAKDOWN
-  after_yield[cur_sample] = __rdtsc();
-  #endif
-
-  /*
-  (Hierarchical CR Preemption Signaling)
-  The preemption signal could be a completion record itself - we may not actually be waiting on a preemption signal from the dispatcher
-  The reason we may not is if a hierarchical scheduling policy emulating c-FCFS tried to enable the worker to simply preempt and reschedule the yielding
-  request without explicit dispatcher signalling
-
-  We assume a hierarchical accelerator-aware scheduling policy where the preemption signal is the CR arrival itself.
-  No preemption signal from the centralized dispatcher is needed to swap the context.
-  */
-
-  auto result = handlers[next_response_idx].get();
-  if(result.status != dml::status_code::ok){
-    std::cerr<<"DSA Offload Failed\n";
-    exit(-1);
-  }
-  /* By blocking when checking for responses in the scheduler, we may inadvertently waste CPU time by not scheduling a ready request */
-  /* We need an async check API that allows ___ */
-  next_response_idx++;
-
-
-  #ifdef BREAKDOWN
-  before_resume[cur_sample] = __rdtsc();
-  #endif
-  request_coro();
-  #ifdef BREAKDOWN
-  after_complete[cur_sample] = __rdtsc();
-  #endif
-
 }
 
 
 int main( int argc, char * argv[])
 {
-  int size = 1024;
   int core = 5;
 
 
 
   for(int i=0; i<num_samples; i++){
-    coro_t::call_type coro1(scheduler);
+    coro_t::call_type coro2(request_2_fn);
+    coro_t::call_type coro1(request_fn);
+    c2 = &coro2;
     coro1();
     cur_sample++;
   }
@@ -163,19 +150,19 @@ int main( int argc, char * argv[])
   uint64_t avg = 0;
   uint64_t yield_to_submit[num_samples];
 
+  avg_samples_from_arrays(yield_to_submit, avg, before_yield, request_start_time,num_samples);
+  std::cout<< "PrepCycles: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, before_yield, before_submit,num_samples);
   std::cout << "SubmitCycles: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, after_yield, before_yield,num_samples);
-  std::cout << "ContextSwitchToWorkerSchedulerCycles: " << avg << std::endl;
+  std::cout << "ContextSwitchToRequest1: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg,before_resume,  after_yield ,num_samples);
-  std::cout << "WorkerWaitCycles: " << avg << std::endl;
+  std::cout << "Request1Cycles: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, after_resume, before_resume,num_samples);
-  std::cout << "ContextSwitchToRequestCycles: " << avg << std::endl;
+  std::cout << "ContextSwitchBackToRequest0: " << avg << std::endl;
 
-  std::cout << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, before_resume, before_yield,num_samples);
-  std::cout << "ActualOffloadCycles: " << avg << std::endl;
-
+  std::cout<< "ActualOffloadCycles: " << avg << std::endl;
   #endif
 
     return EXIT_SUCCESS;
