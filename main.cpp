@@ -17,24 +17,45 @@ int num_request_contexts = 10;
 int size = 4096;
 static constexpr int num_requests = 1024;
 
-uint64_t before_submit;
-uint64_t before_yield;
-uint64_t after_resume;
-uint64_t request_start_time;
-uint64_t after_yield;
+template <typename NUMTYPE>
+static inline void gen_diff_array(NUMTYPE dst_array, NUMTYPE array1, NUMTYPE array2, int size)
+{
+  for(int i=0; i<size; i++){ dst_array[i] = array2[i] - array1[i]; }
+}
+
+#define do_sum_array(accum,array,iter) accum = 0; \
+ for (int i=1; i<iter; i++){ accum+=array[i]; } \
+ accum /= iter
+#define do_avg(sum, itr) (sum/itr)
+
+#define avg_samples_from_arrays(yield_to_submit, avg, before_yield, before_submit, num_samples) \
+  gen_diff_array(yield_to_submit, before_submit, before_yield, num_samples); \
+  do_sum_array(avg, yield_to_submit, num_samples); \
+  do_avg(avg, num_samples);
+
+#ifdef BREAKDOWN
+static constexpr int num_samples = 1000;
+int cur_sample = 0;
+uint64_t before_submit[num_samples];
+uint64_t before_yield[num_samples];
+uint64_t after_yield[num_samples];
+uint64_t after_resume[num_samples];
+uint64_t request_start_time[num_samples];
+uint64_t before_resume[num_samples];
+uint64_t after_complete[num_samples];
+#endif
 
 int cur_request = 0;
 dml::handler<dml::mem_move_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
 
 void request_fn( coro_t::yield_type &yield){
-  for(int i=0; i<100; i++){}
   int next_submit_idx = cur_request;
 
   auto src_data = std::vector<uint8_t>('a',size);
   auto dst_data = std::vector<uint8_t>(src_data.size());
 
   #ifdef BREAKDOWN
-  before_submit = __rdtsc();
+  before_submit[cur_sample] = __rdtsc();
   #endif
 
   handlers[next_submit_idx] = dml::submit<dml::hardware>(dml::mem_move,
@@ -44,11 +65,11 @@ void request_fn( coro_t::yield_type &yield){
   cur_request++;
 
   #ifdef BREAKDOWN
-  before_yield = __rdtsc();
+  before_yield[cur_sample] = __rdtsc();
   #endif
   yield();
   #ifdef BREAKDOWN
-  after_resume = __rdtsc();
+  after_resume[cur_sample] = __rdtsc();
   #endif
 
 
@@ -63,38 +84,49 @@ void request_fn( coro_t::yield_type &yield){
 
 void scheduler( coro_t::yield_type & yield)
 {
-  coro_t::call_type *idle_coroutine;
-  coro_t::call_type * c2[num_request_contexts];
-
   coro_t::call_type request_coro{request_fn};
 
-  /* Make the request contexts */
   #ifdef BREAKDOWN
-  request_start_time = __rdtsc();
+  request_start_time[cur_sample] = __rdtsc();
+  #endif
+  request_coro();
+  #ifdef BREAKDOWN
+  after_yield[cur_sample] = __rdtsc();
   #endif
 
-  request_coro();
-
   #ifdef BREAKDOWN
-  after_yield = __rdtsc();
+  before_resume[cur_sample] = __rdtsc();
   #endif
-
   request_coro();
+  #ifdef BREAKDOWN
+  after_complete[cur_sample] = __rdtsc();
+  #endif
 
 }
 
 int main( int argc, char * argv[])
 {
-  coro_t::call_type coro1(scheduler);
   int size = 1024;
 
-  coro1();
-
+  for(int i=0; i<num_samples; i++){
+    coro_t::call_type coro1(scheduler);
+    coro1();
+    cur_sample++;
+  }
   /* Need the ability to wait on multiple heads and communicate the event reception to the receiver */
 
+    #ifdef BREAKDOWN
+    uint64_t avg = 0;
+    uint64_t yield_to_submit[num_samples];
 
-    std::cout << "SubmitCycles: " << before_yield - before_submit << std::endl;
+    avg_samples_from_arrays(yield_to_submit, avg, before_yield, before_submit,num_samples);
+    // gen_diff_array(yield_to_submit, before_submit, before_yield, num_samples);
+    // do_sum_array(avg, yield_to_submit, num_samples);
+    // do_avg(avg, num_samples);
+    std::cout << "SubmitCycles: " << avg << std::endl;
     std::cout << "ContextSwitchToWorkerSchedulerCycles: " << after_yield - before_yield << std::endl;
+    std::cout << "ContextSwitchToRequestCycles: " << after_resume - before_resume << std::endl;
+    #endif
 
     return EXIT_SUCCESS;
 }
