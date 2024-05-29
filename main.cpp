@@ -90,8 +90,11 @@ int main( int argc, char * argv[])
 
   coro1();
 
+  /* Need the ability to wait on multiple heads and communicate the event reception to the receiver */
 
-    std::cout << "Done" << std::endl;
+
+    std::cout << "SubmitCycles: " << before_yield - before_submit << std::endl;
+    std::cout << "ContextSwitchToWorkerSchedulerCycles: " << after_yield - before_yield << std::endl;
 
     return EXIT_SUCCESS;
 }
