@@ -17,6 +17,12 @@ int num_request_contexts = 10;
 int size = 4096;
 static constexpr int num_requests = 1024;
 
+uint64_t before_submit;
+uint64_t before_yield;
+uint64_t after_resume;
+uint64_t request_start_time;
+uint64_t after_yield;
+
 int cur_request = 0;
 dml::handler<dml::mem_move_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
 
@@ -27,12 +33,23 @@ void request_fn( coro_t::yield_type &yield){
   auto src_data = std::vector<uint8_t>('a',size);
   auto dst_data = std::vector<uint8_t>(src_data.size());
 
+  #ifdef BREAKDOWN
+  before_submit = __rdtsc();
+  #endif
+
   handlers[next_submit_idx] = dml::submit<dml::hardware>(dml::mem_move,
                                         dml::make_view(src_data),
                                         dml::make_view(dst_data));
 
   cur_request++;
+
+  #ifdef BREAKDOWN
+  before_yield = __rdtsc();
+  #endif
   yield();
+  #ifdef BREAKDOWN
+  after_resume = __rdtsc();
+  #endif
 
 
 
@@ -49,18 +66,17 @@ void scheduler( coro_t::yield_type & yield)
   coro_t::call_type *idle_coroutine;
   coro_t::call_type * c2[num_request_contexts];
 
-  std::cout << "Called Scheduler\n";
   coro_t::call_type request_coro{request_fn};
 
   /* Make the request contexts */
   #ifdef BREAKDOWN
-  uint64_t request_start_time = __rdtsc();
+  request_start_time = __rdtsc();
   #endif
 
   request_coro();
 
   #ifdef BREAKDOWN
-  uint64_t after_yield = __rdtsc();
+  after_yield = __rdtsc();
   #endif
 
   request_coro();
@@ -73,6 +89,7 @@ int main( int argc, char * argv[])
   int size = 1024;
 
   coro1();
+
 
     std::cout << "Done" << std::endl;
 
