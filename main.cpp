@@ -77,6 +77,7 @@ dml::handler<dml::mem_copy_operation, std::allocator<std::uint8_t>> handlers[num
 int next_response_idx = 0;
 
 coro_t::call_type * c2 = 0;
+coro_t::call_type *c1 = 0;
 
 
 void request_2_fn( coro_t::yield_type &yield){
@@ -96,8 +97,8 @@ void request_2_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   before_resume[cur_sample] = __rdtsc();
   #endif
-  yield();
 
+  yield( *c1);
 }
 
 void request_fn( coro_t::yield_type &yield){
@@ -124,7 +125,7 @@ void request_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   before_yield[cur_sample] = __rdtsc();
   #endif
-  (*c2)();
+  yield(*c2);
   #ifdef BREAKDOWN
   after_resume[cur_sample] = __rdtsc();
   #endif
@@ -141,6 +142,7 @@ int main( int argc, char * argv[])
     coro_t::call_type coro2(request_2_fn);
     coro_t::call_type coro1(request_fn);
     c2 = &coro2;
+    c1 = &coro1;
     coro1();
     cur_sample++;
   }
