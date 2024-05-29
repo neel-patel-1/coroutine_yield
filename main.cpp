@@ -120,12 +120,11 @@ int main( int argc, char * argv[])
     uint64_t yield_to_submit[num_samples];
 
     avg_samples_from_arrays(yield_to_submit, avg, before_yield, before_submit,num_samples);
-    // gen_diff_array(yield_to_submit, before_submit, before_yield, num_samples);
-    // do_sum_array(avg, yield_to_submit, num_samples);
-    // do_avg(avg, num_samples);
     std::cout << "SubmitCycles: " << avg << std::endl;
-    std::cout << "ContextSwitchToWorkerSchedulerCycles: " << after_yield - before_yield << std::endl;
-    std::cout << "ContextSwitchToRequestCycles: " << after_resume - before_resume << std::endl;
+    avg_samples_from_arrays(yield_to_submit, avg, after_yield, before_yield,num_samples);
+    std::cout << "ContextSwitchToWorkerSchedulerCycles: " << avg << std::endl;
+    avg_samples_from_arrays(yield_to_submit, avg, after_resume, before_resume,num_samples);
+    std::cout << "ContextSwitchToRequestCycles: " << avg << std::endl;
     #endif
 
     return EXIT_SUCCESS;
