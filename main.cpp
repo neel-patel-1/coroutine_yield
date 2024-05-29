@@ -66,7 +66,13 @@ uint64_t before_submit[num_samples];
 uint64_t before_yield[num_samples];
 uint64_t after_yield[num_samples];
 uint64_t after_resume[num_samples];
+
+uint64_t scheduler_start_time[num_samples];
 uint64_t request_start_time[num_samples];
+uint64_t scheduler_resume_time[num_samples];
+uint64_t scheduler_resume_2_time[num_samples];
+uint64_t scheduler_end_time[num_samples];
+
 uint64_t before_resume[num_samples];
 uint64_t after_complete[num_samples];
 #endif
@@ -76,6 +82,7 @@ int cur_request = 0;
 dml::handler<dml::batch_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
 int next_response_idx = 0;
 
+coro_t::call_type * c3 = 0;
 coro_t::call_type * c2 = 0;
 coro_t::call_type *c1 = 0;
 
@@ -98,7 +105,7 @@ void request_2_fn( coro_t::yield_type &yield){
   before_resume[cur_sample] = __rdtsc();
   #endif
 
-  yield( *c1);
+  yield( *c3);
 }
 
 void request_fn( coro_t::yield_type &yield){
@@ -122,10 +129,8 @@ void request_fn( coro_t::yield_type &yield){
 
   auto sequence = dml::sequence(count, std::allocator<dml::byte_t>());
   sequence.add(dml::fill, pattern, dml::make_view(src));
-  // sequence.add(dml::nop);
   sequence.add(dml::mem_move, dml::make_view(src), dml::make_view(dst1));
   sequence.add(dml::dualcast, dml::make_view(src), dml::make_view(dst2), dml::make_view(dst3));
-  // sequence.add(dml::nop);
   sequence.add(dml::compare_pattern, pattern, dml::make_view(dst1));
   sequence.add(dml::compare, dml::make_view(dst2), dml::make_view(dst3));
 
@@ -140,9 +145,32 @@ void request_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   before_yield[cur_sample] = __rdtsc();
   #endif
-  yield(*c2);
+  yield(*c3);
   #ifdef BREAKDOWN
   after_resume[cur_sample] = __rdtsc();
+  #endif
+  yield(*c3);
+}
+
+void scheduler( coro_t::yield_type &yield){
+  #ifdef BREAKDOWN
+  scheduler_start_time[cur_sample] = __rdtsc();
+  #endif
+  yield(*c1);
+
+  #ifdef BREAKDOWN
+  scheduler_resume_time[cur_sample] = __rdtsc();
+  #endif
+
+  yield(*c2);
+
+  #ifdef BREAKDOWN
+  scheduler_resume_2_time[cur_sample] = __rdtsc();
+  #endif
+  yield(*c1);
+
+  #ifdef BREAKDOWN
+  scheduler_end_time[cur_sample] = __rdtsc();
   #endif
 }
 
@@ -154,11 +182,13 @@ int main( int argc, char * argv[])
 
 
   for(int i=0; i<num_samples; i++){
+    coro_t::call_type coro3(scheduler);
     coro_t::call_type coro2(request_2_fn);
     coro_t::call_type coro1(request_fn);
     c2 = &coro2;
     c1 = &coro1;
-    coro1();
+    c3 = &coro3;
+    coro3();
     cur_sample++;
   }
 
@@ -166,16 +196,25 @@ int main( int argc, char * argv[])
   uint64_t avg = 0;
   uint64_t yield_to_submit[num_samples];
 
-  avg_samples_from_arrays(yield_to_submit, avg, before_yield, request_start_time,num_samples);
-  std::cout<< "PrepCycles: " << avg << std::endl;
+
+  avg_samples_from_arrays(yield_to_submit, avg, request_start_time, scheduler_start_time,num_samples);
+  std::cout<< "SchedulerToRequest0Switch: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg, before_submit, request_start_time,num_samples);
+  std::cout << "PrepCycles: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, before_yield, before_submit,num_samples);
   std::cout << "SubmitCycles: " << avg << std::endl;
-  avg_samples_from_arrays(yield_to_submit, avg, after_yield, before_yield,num_samples);
-  std::cout << "ContextSwitchToRequest1: " << avg << std::endl;
-  avg_samples_from_arrays(yield_to_submit, avg,before_resume,  after_yield ,num_samples);
-  std::cout << "Request1Cycles: " << avg << std::endl;
-  avg_samples_from_arrays(yield_to_submit, avg, after_resume, before_resume,num_samples);
-  std::cout << "ContextSwitchBackToRequest0: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg,scheduler_resume_time,  before_yield ,num_samples);
+  std::cout << "Request0ToSchedulerSwitch: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg, after_yield, scheduler_resume_time,num_samples);
+  std::cout << "SchedulerToRequest1Switch: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg, before_resume, after_yield,num_samples);
+  std::cout << "Request1TCycles: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg, scheduler_resume_2_time, before_resume,num_samples);
+  std::cout << "Request1ToSchedulerSwitch: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg, after_resume,scheduler_resume_2_time,num_samples);
+  std::cout << "SchedulerToRequest0Switch: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg, scheduler_end_time, after_resume,num_samples);
+  std::cout << "Request0ToSchedulerSwitch: " << avg << std::endl;
 
   avg_samples_from_arrays(yield_to_submit, avg, before_resume, before_yield,num_samples);
   std::cout<< "ActualOffloadCycles: " << avg << std::endl;
