@@ -2,40 +2,25 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <immintrin.h>
 
 #include <boost/bind.hpp>
 
 typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 
 coro_t::call_type * c1 = 0;
-coro_t::call_type * c2 = 0;
 
-
-void foo( coro_t::yield_type & yield)
+void scheduler( coro_t::yield_type & yield)
 {
-    std::cout << "foo1" << std::endl;
-    yield( * c2);
-    std::cout << "foo2" << std::endl;
-    yield( * c2);
-    std::cout << "foo3" << std::endl;
-}
-
-void bar( coro_t::yield_type & yield)
-{
-    std::cout << "bar1" << std::endl;
-    yield( * c1);
-    std::cout << "bar2" << std::endl;
-    yield( * c1);
-    std::cout << "bar3" << std::endl;
+  std::cout << "Scheduler invoked" << std::endl;
 }
 
 int main( int argc, char * argv[])
 {
-    coro_t::call_type coro1( foo);
-    coro_t::call_type coro2( bar);
+    coro_t::call_type coro1( scheduler);
     c1 = & coro1;
-    c2 = & coro2;
     coro1();
+
     std::cout << "Done" << std::endl;
 
     return EXIT_SUCCESS;
