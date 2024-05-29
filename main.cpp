@@ -167,10 +167,15 @@ int main( int argc, char * argv[])
   std::cout << "SubmitCycles: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, after_yield, before_yield,num_samples);
   std::cout << "ContextSwitchToWorkerSchedulerCycles: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg,before_resume,  after_yield ,num_samples);
+  std::cout << "WorkerWaitCycles: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, after_resume, before_resume,num_samples);
   std::cout << "ContextSwitchToRequestCycles: " << avg << std::endl;
-  avg_samples_from_arrays(yield_to_submit, avg, after_resume, before_resume,num_samples);
-  std::cout << "TotalOffloadCycles: " << avg << std::endl;
+
+  std::cout << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg, before_resume, before_yield,num_samples);
+  std::cout << "ActualOffloadCycles: " << avg << std::endl;
+
   #endif
 
     return EXIT_SUCCESS;
