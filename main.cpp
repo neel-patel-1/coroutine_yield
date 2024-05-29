@@ -27,6 +27,7 @@ void request_fn( coro_t::yield_type &yield){
   yield();
 
 
+
   auto result = handler.get();
   if (result.status != dml::status_code::ok)
   {
@@ -41,9 +42,12 @@ void scheduler( coro_t::yield_type & yield)
   coro_t::call_type * c2[num_request_contexts];
 
   std::cout << "Called Scheduler\n";
-  coro_t::call_type request{request_fn};
+  coro_t::call_type request_coro{request_fn};
 
   /* Make the request contexts */
+  request_coro();
+
+  request_coro();
 
 }
 
