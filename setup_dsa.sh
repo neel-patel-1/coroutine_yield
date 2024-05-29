@@ -263,6 +263,9 @@ do_options() {
 		unbind 0
 	fi
 
+	# modify perms
+	sudo chmod a+rw -R /dev/dsa
+	sudo chmod a+rw -R /dev/iax
 	exit 0
 }
 
