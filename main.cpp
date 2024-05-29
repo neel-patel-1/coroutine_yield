@@ -124,9 +124,8 @@ void request_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   before_yield[cur_sample] = __rdtsc();
   #endif
-  yield( *c2);
+  (*c2)();
   #ifdef BREAKDOWN
-  printf("back\n");
   after_resume[cur_sample] = __rdtsc();
   #endif
 }
