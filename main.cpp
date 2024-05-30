@@ -14,6 +14,7 @@
 
 #include "dml/dml.hpp"
 #include "dml/dml.h"
+
 typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 
 /* Coroutine for Request 2 */
@@ -21,6 +22,12 @@ typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 /* Test Params */
 int size = 2048 * 1024;
 static constexpr int num_requests = 100;
+
+/* C API Batch Test Params */
+#define BUFFER_SIZE  1024 // 1 KB
+#define PADDING_SIZE 4096 // DML_OP_DUALCAST requirement "dst1 and dst2 address bits 11:0 must be the same"
+#define BATCH_COUNT  7u   // 7 ops for this batch operation
+#define PATTERN_SIZE 8u   // pattern size is always 8
 
 /* Wait Functions */
 static __always_inline void umonitor(const volatile void *addr)
@@ -109,6 +116,13 @@ void request_fn( coro_t::yield_type &yield){
   dml_status_t status;
   dml_job_t *dml_job_ptr;
   uint32_t *job_size_ptr;
+
+  uint32_t batch_buffer_length = 0u;
+
+  uint8_t buffer_one    [BUFFER_SIZE];
+  uint8_t buffer_two    [BUFFER_SIZE];
+  uint8_t buffer_three  [BUFFER_SIZE * 2 + PADDING_SIZE];
+
   #ifdef BREAKDOWN
   request_start_time[cur_sample] = __rdtsc();
   #endif
@@ -124,6 +138,16 @@ void request_fn( coro_t::yield_type &yield){
   if(status != DML_STATUS_OK){
     std::cerr << "Job initialization failed\n";
   }
+
+  status = dml_get_batch_size(dml_job_ptr, BATCH_COUNT, &batch_buffer_length);
+  if (DML_STATUS_OK != status) {
+    printf("An error (%u) occured during getting batch size.\n", status);
+  }
+
+  uint8_t * batch_buffer_ptr = (uint8_t *) malloc(batch_buffer_length);
+  dml_job_ptr->operation              = DML_OP_BATCH;
+  dml_job_ptr->destination_first_ptr  = batch_buffer_ptr;
+  dml_job_ptr->destination_length     = batch_buffer_length;
 
   #ifdef BREAKDOWN
   after_job_alloc[cur_sample] = __rdtsc();
