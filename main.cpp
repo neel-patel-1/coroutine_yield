@@ -205,8 +205,11 @@ int main( int argc, char * argv[])
   uint64_t avg = 0;
   uint64_t yield_to_submit[num_samples];
 
-  avg_samples_from_arrays(yield_to_submit, avg, before_yield, request_start_time,num_samples);
-  std::cout<< "PrepCycles: " << avg << std::endl;
+  avg_samples_from_arrays(yield_to_submit, avg, after_job_alloc, request_start_time,num_samples);
+  std::cout<< "JobAllocCycles: " << avg << std::endl;
+
+  avg_samples_from_arrays(yield_to_submit, avg, after_job_prepare, after_job_alloc,num_samples);
+  std::cout<< "JobPrepCycles: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, before_yield, before_submit,num_samples);
   std::cout << "SubmitCycles: " << avg << std::endl;
   avg_samples_from_arrays(yield_to_submit, avg, after_yield, before_yield,num_samples);
