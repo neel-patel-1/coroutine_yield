@@ -99,8 +99,8 @@ void request_2_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   after_yield[cur_sample] = __rdtsc();
   #endif
-  auto result = handlers[next_response_idx].get();
-  if(result.status != dml::status_code::ok){
+  dml_status_t status  = dml_wait_job(dml_job_ptrs[next_response_idx], DML_WAIT_MODE_BUSY_POLL);
+  if(status != DML_STATUS_OK){
     std::cerr<<"DSA Offload Failed\n";
     exit(-1);
   }
