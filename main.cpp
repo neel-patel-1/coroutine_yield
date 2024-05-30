@@ -116,14 +116,11 @@ void request_2_fn( coro_t::yield_type &yield){
 
 void request_fn( coro_t::yield_type &yield){
   dml_status_t status;
-  uint32_t *job_size_ptr;
+  uint32_t job_size_ptr;
 
-  uint32_t batch_buffer_length = 0u;
-
-  uint8_t buffer_one    [BUFFER_SIZE];
-  uint8_t buffer_two    [BUFFER_SIZE];
-  uint8_t buffer_three  [BUFFER_SIZE * 2 + PADDING_SIZE];
-
+  auto buffer_one = std::vector<std::uint8_t>(size,0u);
+  auto buffer_two = std::vector<std::uint8_t>(size,0u);
+  auto buffer_three = std::vector<std::uint8_t>(size * 2 + PADDING_SIZE,0u);
   int next_submit_idx = cur_request;
 
   #ifdef BREAKDOWN
@@ -131,59 +128,61 @@ void request_fn( coro_t::yield_type &yield){
   #endif
 
 
-  status = dml_get_job_size(DML_PATH_HW, job_size_ptr);
+  status = dml_get_job_size(DML_PATH_HW, &job_size_ptr);
   if(status != DML_STATUS_OK){
     std::cerr << "Job size determination failed\n";
   }
 
-  dml_job_ptrs[next_submit_idx] = (dml_job_t *) malloc(*job_size_ptr);
+  dml_job_ptrs[next_submit_idx] = (dml_job_t *) malloc(job_size_ptr);
   status = dml_init_job(DML_PATH_HW, dml_job_ptrs[next_submit_idx]);
   if(status != DML_STATUS_OK){
     std::cerr << "Job initialization failed\n";
   }
 
-  #ifdef BREAKDOWN
-  after_job_alloc[cur_sample] = __rdtsc();
-  #endif
+  // #ifdef BREAKDOWN
+  // after_job_alloc[cur_sample] = __rdtsc();
+  // #endif
 
-  status = dml_get_batch_size(dml_job_ptrs[next_submit_idx], BATCH_COUNT, &batch_buffer_length);
-  if (DML_STATUS_OK != status) {
-    printf("An error (%u) occured during getting batch size.\n", status);
-  }
+  // uint32_t batch_buffer_length = 0u;
 
-  uint8_t * batch_buffer_ptr = (uint8_t *) malloc(batch_buffer_length);
-  dml_job_ptrs[next_submit_idx]->operation              = DML_OP_BATCH;
-  dml_job_ptrs[next_submit_idx]->destination_first_ptr  = batch_buffer_ptr;
-  dml_job_ptrs[next_submit_idx]->destination_length     = batch_buffer_length;
+  // status = dml_get_batch_size(dml_job_ptrs[next_submit_idx], BATCH_COUNT, &batch_buffer_length);
+  // if (DML_STATUS_OK != status) {
+  //   printf("An error (%u) occured during getting batch size.\n", status);
+  // }
 
-  uint8_t pattern     [PATTERN_SIZE] = {0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u};
+  // uint8_t * batch_buffer_ptr = (uint8_t *) malloc(batch_buffer_length);
+  // dml_job_ptrs[next_submit_idx]->operation              = DML_OP_BATCH;
+  // dml_job_ptrs[next_submit_idx]->destination_first_ptr  = batch_buffer_ptr;
+  // dml_job_ptrs[next_submit_idx]->destination_length     = batch_buffer_length;
 
-  status = dml_batch_set_fill_by_index(dml_job_ptrs[next_submit_idx], 0, pattern, buffer_one, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
-  status = dml_batch_set_mem_move_by_index(dml_job_ptrs[next_submit_idx], 1, buffer_one, buffer_two, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
-  status = dml_batch_set_dualcast_by_index(dml_job_ptrs[next_submit_idx], 2, buffer_one, buffer_three, buffer_three + PADDING_SIZE, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
-  status = dml_batch_set_compare_pattern_by_index(dml_job_ptrs[next_submit_idx], 3, buffer_three + PADDING_SIZE, pattern, BUFFER_SIZE, 0, 0x00);
-  status = dml_batch_set_compare_by_index(dml_job_ptrs[next_submit_idx], 4, buffer_three, buffer_two, BUFFER_SIZE, 0, 0x00);
-  #ifdef BREAKDOWN
-  after_job_prepare[cur_sample] = __rdtsc();
-  #endif
+  // uint8_t pattern     [PATTERN_SIZE] = {0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u};
+
+  // status = dml_batch_set_fill_by_index(dml_job_ptrs[next_submit_idx], 0, pattern, buffer_one, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
+  // status = dml_batch_set_mem_move_by_index(dml_job_ptrs[next_submit_idx], 1, buffer_one, buffer_two, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
+  // status = dml_batch_set_dualcast_by_index(dml_job_ptrs[next_submit_idx], 2, buffer_one, buffer_three, buffer_three + PADDING_SIZE, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
+  // status = dml_batch_set_compare_pattern_by_index(dml_job_ptrs[next_submit_idx], 3, buffer_three + PADDING_SIZE, pattern, BUFFER_SIZE, 0, 0x00);
+  // status = dml_batch_set_compare_by_index(dml_job_ptrs[next_submit_idx], 4, buffer_three, buffer_two, BUFFER_SIZE, 0, 0x00);
+  // #ifdef BREAKDOWN
+  // after_job_prepare[cur_sample] = __rdtsc();
+  // #endif
 
 
 
-  #ifdef BREAKDOWN
-  before_submit[cur_sample] = __rdtsc();
-  #endif
+  // #ifdef BREAKDOWN
+  // before_submit[cur_sample] = __rdtsc();
+  // #endif
 
-  status = dml_submit_job(dml_job_ptrs[next_submit_idx]);
+  // status = dml_submit_job(dml_job_ptrs[next_submit_idx]);
 
-  cur_request++;
+  // cur_request++;
 
-  #ifdef BREAKDOWN
-  before_yield[cur_sample] = __rdtsc();
-  #endif
-  yield(*c2);
-  #ifdef BREAKDOWN
-  after_resume[cur_sample] = __rdtsc();
-  #endif
+  // #ifdef BREAKDOWN
+  // before_yield[cur_sample] = __rdtsc();
+  // #endif
+  // yield(*c2);
+  // #ifdef BREAKDOWN
+  // after_resume[cur_sample] = __rdtsc();
+  // #endif
 }
 
 
