@@ -24,9 +24,9 @@ int size = 2048 * 1024;
 static constexpr int num_requests = 100;
 
 /* C API Batch Test Params */
-#define BUFFER_SIZE  1024 // 1 KB
+#define BUFFER_SIZE  2048 * 1024 // 2 MB
 #define PADDING_SIZE 4096 // DML_OP_DUALCAST requirement "dst1 and dst2 address bits 11:0 must be the same"
-#define BATCH_COUNT  7u   // 7 ops for this batch operation
+#define BATCH_COUNT  5u   // 7 ops for this batch operation
 #define PATTERN_SIZE 8u   // pattern size is always 8
 
 /* Wait Functions */
@@ -80,11 +80,13 @@ uint64_t after_complete[num_samples];
 
 #ifdef BREAKDOWN
 uint64_t after_job_alloc[num_samples];
+uint64_t after_job_prepare[num_samples];
 #endif
 
 
 int cur_request = 0;
 dml::handler<dml::batch_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
+dml_job_t *dml_job_ptrs[num_requests];
 int next_response_idx = 0;
 
 coro_t::call_type * c2 = 0;
@@ -114,7 +116,6 @@ void request_2_fn( coro_t::yield_type &yield){
 
 void request_fn( coro_t::yield_type &yield){
   dml_status_t status;
-  dml_job_t *dml_job_ptr;
   uint32_t *job_size_ptr;
 
   uint32_t batch_buffer_length = 0u;
@@ -122,6 +123,8 @@ void request_fn( coro_t::yield_type &yield){
   uint8_t buffer_one    [BUFFER_SIZE];
   uint8_t buffer_two    [BUFFER_SIZE];
   uint8_t buffer_three  [BUFFER_SIZE * 2 + PADDING_SIZE];
+
+  int next_submit_idx = cur_request;
 
   #ifdef BREAKDOWN
   request_start_time[cur_sample] = __rdtsc();
@@ -133,52 +136,44 @@ void request_fn( coro_t::yield_type &yield){
     std::cerr << "Job size determination failed\n";
   }
 
-  dml_job_ptr = (dml_job_t *) malloc(*job_size_ptr);
-  status = dml_init_job(DML_PATH_HW, dml_job_ptr);
+  dml_job_ptrs[next_submit_idx] = (dml_job_t *) malloc(*job_size_ptr);
+  status = dml_init_job(DML_PATH_HW, dml_job_ptrs[next_submit_idx]);
   if(status != DML_STATUS_OK){
     std::cerr << "Job initialization failed\n";
   }
-
-  status = dml_get_batch_size(dml_job_ptr, BATCH_COUNT, &batch_buffer_length);
-  if (DML_STATUS_OK != status) {
-    printf("An error (%u) occured during getting batch size.\n", status);
-  }
-
-  uint8_t * batch_buffer_ptr = (uint8_t *) malloc(batch_buffer_length);
-  dml_job_ptr->operation              = DML_OP_BATCH;
-  dml_job_ptr->destination_first_ptr  = batch_buffer_ptr;
-  dml_job_ptr->destination_length     = batch_buffer_length;
 
   #ifdef BREAKDOWN
   after_job_alloc[cur_sample] = __rdtsc();
   #endif
 
-  int next_submit_idx = cur_request;
+  status = dml_get_batch_size(dml_job_ptrs[next_submit_idx], BATCH_COUNT, &batch_buffer_length);
+  if (DML_STATUS_OK != status) {
+    printf("An error (%u) occured during getting batch size.\n", status);
+  }
 
-  auto pattern = 0x00ABCDEFABCDEF00;
-  auto src = std::vector<std::uint8_t>(size);
+  uint8_t * batch_buffer_ptr = (uint8_t *) malloc(batch_buffer_length);
+  dml_job_ptrs[next_submit_idx]->operation              = DML_OP_BATCH;
+  dml_job_ptrs[next_submit_idx]->destination_first_ptr  = batch_buffer_ptr;
+  dml_job_ptrs[next_submit_idx]->destination_length     = batch_buffer_length;
 
-  auto dst1 = std::vector<std::uint8_t>(size, 0u);
-  auto dst2 = std::vector<std::uint8_t>(size, 0u);
-  auto dst3 = std::vector<std::uint8_t>(size);
+  uint8_t pattern     [PATTERN_SIZE] = {0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u};
+
+  status = dml_batch_set_fill_by_index(dml_job_ptrs[next_submit_idx], 0, pattern, buffer_one, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
+  status = dml_batch_set_mem_move_by_index(dml_job_ptrs[next_submit_idx], 1, buffer_one, buffer_two, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
+  status = dml_batch_set_dualcast_by_index(dml_job_ptrs[next_submit_idx], 2, buffer_one, buffer_three, buffer_three + PADDING_SIZE, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
+  status = dml_batch_set_compare_pattern_by_index(dml_job_ptrs[next_submit_idx], 3, buffer_three + PADDING_SIZE, pattern, BUFFER_SIZE, 0, 0x00);
+  status = dml_batch_set_compare_by_index(dml_job_ptrs[next_submit_idx], 4, buffer_three, buffer_two, BUFFER_SIZE, 0, 0x00);
+  #ifdef BREAKDOWN
+  after_job_prepare[cur_sample] = __rdtsc();
+  #endif
 
 
-  constexpr auto count  = 5u;
-
-  auto sequence = dml::sequence(count, std::allocator<dml::byte_t>());
-  sequence.add(dml::fill, pattern, dml::make_view(src));
-  // sequence.add(dml::nop);
-  sequence.add(dml::mem_move, dml::make_view(src), dml::make_view(dst1));
-  sequence.add(dml::dualcast, dml::make_view(src), dml::make_view(dst2), dml::make_view(dst3));
-  // sequence.add(dml::nop);
-  sequence.add(dml::compare_pattern, pattern, dml::make_view(dst1));
-  sequence.add(dml::compare, dml::make_view(dst2), dml::make_view(dst3));
 
   #ifdef BREAKDOWN
   before_submit[cur_sample] = __rdtsc();
   #endif
 
-  handlers[next_submit_idx] = dml::submit<dml::hardware>(dml::batch, sequence );
+  status = dml_submit_job(dml_job_ptrs[next_submit_idx]);
 
   cur_request++;
 
