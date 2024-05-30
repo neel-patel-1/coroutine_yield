@@ -71,6 +71,10 @@ uint64_t before_resume[num_samples];
 uint64_t after_complete[num_samples];
 #endif
 
+#ifdef BREAKDOWN
+uint64_t after_job_alloc[num_samples];
+#endif
+
 
 int cur_request = 0;
 dml::handler<dml::batch_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
@@ -102,9 +106,27 @@ void request_2_fn( coro_t::yield_type &yield){
 }
 
 void request_fn( coro_t::yield_type &yield){
-
+  dml_status_t status;
+  dml_job_t *dml_job_ptr;
+  uint32_t *job_size_ptr;
   #ifdef BREAKDOWN
   request_start_time[cur_sample] = __rdtsc();
+  #endif
+
+
+  status = dml_get_job_size(DML_PATH_HW, job_size_ptr);
+  if(status != DML_STATUS_OK){
+    std::cerr << "Job size determination failed\n";
+  }
+
+  dml_job_ptr = (dml_job_t *) malloc(*job_size_ptr);
+  status = dml_init_job(DML_PATH_HW, dml_job_ptr);
+  if(status != DML_STATUS_OK){
+    std::cerr << "Job initialization failed\n";
+  }
+
+  #ifdef BREAKDOWN
+  after_job_alloc[cur_sample] = __rdtsc();
   #endif
 
   int next_submit_idx = cur_request;
@@ -115,7 +137,6 @@ void request_fn( coro_t::yield_type &yield){
   auto dst1 = std::vector<std::uint8_t>(size, 0u);
   auto dst2 = std::vector<std::uint8_t>(size, 0u);
   auto dst3 = std::vector<std::uint8_t>(size);
-
 
 
   constexpr auto count  = 5u;
