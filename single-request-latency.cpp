@@ -17,14 +17,12 @@
 
 typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 
-/* Coroutine for Request 2 */
-
 /* Test Params */
-int size = 2048 * 1024;
+int size = 4096;
 static constexpr int num_requests = 10000;
 
 /* C API Batch Test Params */
-#define BUFFER_SIZE  2048 * 1024 // 2 MB
+#define BUFFER_SIZE  4096
 #define PADDING_SIZE 4096 // DML_OP_DUALCAST requirement "dst1 and dst2 address bits 11:0 must be the same"
 #define BATCH_COUNT  5u   // 7 ops for this batch operation
 #define PATTERN_SIZE 8u   // pattern size is always 8
@@ -105,10 +103,7 @@ int main( int argc, char * argv[])
   dml_job_t *dml_job_ptr;
   dml_status_t status;
   uint32_t job_size_ptr;
-  status = dml_get_job_size(DML_PATH_HW, &job_size_ptr);
-  if(status != DML_STATUS_OK){
-    std::cerr << "Job size determination failed\n";
-  }
+
 
   uint8_t source      [BUFFER_SIZE];
   uint8_t destination [BUFFER_SIZE];
@@ -125,6 +120,10 @@ int main( int argc, char * argv[])
     #ifdef BREAKDOWN
     before_job_alloc[cur_sample] = __rdtsc();
     #endif
+    status = dml_get_job_size(DML_PATH_HW, &job_size_ptr);
+    if(status != DML_STATUS_OK){
+      std::cerr << "Job size determination failed\n";
+    }
     dml_job_ptr = (dml_job_t *) malloc(job_size_ptr);
 
     #ifdef BREAKDOWN
