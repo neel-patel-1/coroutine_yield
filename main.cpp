@@ -24,7 +24,7 @@ int size = 2048 * 1024;
 static constexpr int num_requests = 100;
 
 /* C API Batch Test Params */
-#define BUFFER_SIZE  2048 * 1024 // 2 MB
+#define BUFFER_SIZE  4096 // 2 MB
 #define PADDING_SIZE 4096 // DML_OP_DUALCAST requirement "dst1 and dst2 address bits 11:0 must be the same"
 #define BATCH_COUNT  5u   // 7 ops for this batch operation
 #define PATTERN_SIZE 8u   // pattern size is always 8
@@ -94,14 +94,14 @@ uint64_t after_job_prepare[num_samples];
 
 
 int cur_request = 0;
-dml::handler<dml::batch_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
-dml_job_t *dml_job_ptrs[num_requests];
+dml::handler<dml::copy_crc_operation, std::allocator<std::uint8_t>> handlers[num_requests]; /* I want to have multiple requests in flight and have requests being preempted */
 int next_response_idx = 0;
 
 coro_t::call_type * c3 = 0;
 coro_t::call_type * c2 = 0;
 coro_t::call_type *c1 = 0;
 
+dml_job_t *dml_job_ptr;
 
 void request_2_fn( coro_t::yield_type &yield){
 
@@ -109,7 +109,7 @@ void request_2_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   after_yield[cur_sample] = __rdtsc();
   #endif
-  dml_status_t status  = dml_wait_job(dml_job_ptrs[next_response_idx], DML_WAIT_MODE_BUSY_POLL);
+  dml_status_t status  = dml_wait_job(dml_job_ptr, DML_WAIT_MODE_BUSY_POLL);
   if(status != DML_STATUS_OK){
     std::cerr<<"DSA Offload Failed\n";
     exit(-1);
@@ -132,10 +132,13 @@ void request_fn( coro_t::yield_type &yield){
   request_start_time[cur_sample] = __rdtsc();
   #endif
 
-  auto buffer_one = std::vector<std::uint8_t>(size,0u);
-  auto buffer_two = std::vector<std::uint8_t>(size,0u);
-  auto buffer_three = std::vector<std::uint8_t>(size * 2 + PADDING_SIZE,0u);
-  int next_submit_idx = cur_request;
+  uint8_t * source = (uint8_t *)malloc(BUFFER_SIZE);;
+  uint8_t * destination = (uint8_t *)malloc(BUFFER_SIZE);;
+
+  for(int i = 0; i < BUFFER_SIZE; i++){
+      source[i] = i % 256;
+  }
+  uint32_t crc = 1;
 
   #ifdef BREAKDOWN
   before_job_alloc[cur_sample] = __rdtsc();
@@ -146,39 +149,24 @@ void request_fn( coro_t::yield_type &yield){
     std::cerr << "Job size determination failed\n";
   }
 
-  dml_job_ptrs[next_submit_idx] = (dml_job_t *) malloc(job_size_ptr);
-  status = dml_init_job(DML_PATH_HW, dml_job_ptrs[next_submit_idx]);
-  if(status != DML_STATUS_OK){
-    std::cerr << "Job initialization failed\n";
-  }
+  dml_job_ptr = (dml_job_t *) malloc(job_size_ptr);
+
 
   #ifdef BREAKDOWN
   after_job_alloc[cur_sample] = __rdtsc();
   #endif
-
-  uint32_t batch_buffer_length = 0u;
-
-  status = dml_get_batch_size(dml_job_ptrs[next_submit_idx], BATCH_COUNT, &batch_buffer_length);
-  if (DML_STATUS_OK != status) {
-    printf("An error (%u) occured during getting batch size.\n", status);
-  }
-
-  uint8_t * batch_buffer_ptr = (uint8_t *) malloc(batch_buffer_length);
-
   #ifdef BREAKDOWN
   before_job_prepare[cur_sample] = __rdtsc();
   #endif
-  dml_job_ptrs[next_submit_idx]->operation              = DML_OP_BATCH;
-  dml_job_ptrs[next_submit_idx]->destination_first_ptr  = batch_buffer_ptr;
-  dml_job_ptrs[next_submit_idx]->destination_length     = batch_buffer_length;
-
-  uint8_t pattern     [PATTERN_SIZE] = {0u, 1u, 2u, 3u, 4u, 5u, 6u, 7u};
-
-  status = dml_batch_set_fill_by_index(dml_job_ptrs[next_submit_idx], 0, pattern, buffer_one.data(), BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
-  status = dml_batch_set_mem_move_by_index(dml_job_ptrs[next_submit_idx], 1, buffer_one.data(), buffer_two.data(), BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
-  status = dml_batch_set_dualcast_by_index(dml_job_ptrs[next_submit_idx], 2, buffer_one.data(), buffer_three.data(), buffer_three.data() + PADDING_SIZE, BUFFER_SIZE, DML_FLAG_PREFETCH_CACHE);
-  status = dml_batch_set_compare_pattern_by_index(dml_job_ptrs[next_submit_idx], 3, buffer_three.data() + PADDING_SIZE, pattern, BUFFER_SIZE, 0, 0x00);
-  status = dml_batch_set_compare_by_index(dml_job_ptrs[next_submit_idx], 4, buffer_three.data(), buffer_two.data(), BUFFER_SIZE, 0, 0x00);
+  status = dml_init_job(DML_PATH_HW, dml_job_ptr);
+  if(status != DML_STATUS_OK){
+    std::cerr << "Job initialization failed\n";
+  }
+  dml_job_ptr->operation = DML_OP_COPY_CRC;
+  dml_job_ptr->source_first_ptr       = source;
+  dml_job_ptr->destination_first_ptr  = destination;
+  dml_job_ptr->source_length          = BUFFER_SIZE;
+  dml_job_ptr->crc_checksum_ptr       = &crc;
   #ifdef BREAKDOWN
   after_job_prepare[cur_sample] = __rdtsc();
   #endif
@@ -189,7 +177,17 @@ void request_fn( coro_t::yield_type &yield){
   before_submit[cur_sample] = __rdtsc();
   #endif
 
-  status = dml_submit_job(dml_job_ptrs[next_submit_idx]);
+  status = dml_submit_job(dml_job_ptr);
+  if (DML_STATUS_OK != status) {
+      printf("An error (%u) occured during job submission .\n", status);
+      dml_finalize_job(dml_job_ptr);
+      free(dml_job_ptr);
+      exit(-1);
+  }
+  if(status != DML_STATUS_OK){
+    std::cerr<<"DSA Submit Failed\n";
+    exit(-1);
+  }
 
   cur_request++;
 
@@ -200,6 +198,21 @@ void request_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   after_resume[cur_sample] = __rdtsc();
   #endif
+  for(int i = 0; i < BUFFER_SIZE; i++){
+      if(destination[i] != source[i]){
+          printf("Error: Operation result is incorrect.\n");
+          dml_finalize_job(dml_job_ptr);
+          free(dml_job_ptr);
+          exit(-1);
+      }
+  }
+  status = dml_finalize_job(dml_job_ptr);
+  if (DML_STATUS_OK != status) {
+      printf("An error (%u) occured during job finalization.\n", status);
+      free(dml_job_ptr);
+      exit(-1);
+  }
+  free(dml_job_ptr);
   yield(*c3);
 }
 
@@ -229,7 +242,7 @@ void scheduler( coro_t::yield_type &yield){
 int main( int argc, char * argv[])
 {
   int core = 5;
-
+  dml_status_t status;
 
 
   for(int i=0; i<num_samples; i++){
@@ -240,6 +253,7 @@ int main( int argc, char * argv[])
     c1 = &coro1;
     c3 = &coro3;
     coro3();
+
     cur_sample++;
   }
 
