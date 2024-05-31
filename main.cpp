@@ -242,6 +242,8 @@ void scheduler( coro_t::yield_type &yield){
       exit(-1);
   }
   free(dml_job_ptr);
+  free(source);
+  free(destination);
 }
 
 

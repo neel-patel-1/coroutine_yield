@@ -3,7 +3,7 @@
 CXX=g++-11
 CXX_FLAGS=-I/home/n869p538/spr-accel-profiling/interrupt_qat_dc/DML/install/include -I/home/n869p538/spr-accel-profiling/interrupt_qat_dc -I/home/n869p538/spr-accel-profiling/interrupt_qat_dc/qatlib/quickassist/include
 LDD_FLAGS=-lboost_coroutine -ldml -lqat -lusdm -L/home/n869p538/spr-accel-profiling/interrupt_qat_dc/DML/install/lib/ -L/home/n869p538/spr-accel-profiling/interrupt_qat_dc/qatlib/.libs
-FLAGS= -DBREAKDOWN
+FLAGS= -DBREAKDOWN -g
 
 all: baseline-ctx-switch single-request-latency accel_notify_context_switch
 
