@@ -20,7 +20,7 @@ typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 /* Coroutine for Request 2 */
 
 /* Test Params */
-static constexpr int num_requests = 100;
+static constexpr int num_requests = 1000;
 
 uint8_t * source;
 uint8_t * destination;

@@ -19,7 +19,7 @@ typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 
 /* Test Params */
 int size = 4096;
-static constexpr int num_requests = 10000;
+static constexpr int num_requests = 1000;
 
 /* C API Batch Test Params */
 #define BUFFER_SIZE  4096

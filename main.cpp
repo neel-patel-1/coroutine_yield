@@ -21,7 +21,7 @@ typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 
 /* Test Params */
 int size = 2048 * 1024;
-static constexpr int num_requests = 100;
+static constexpr int num_requests = 1000;
 
 uint8_t * source;
 uint8_t * destination;
