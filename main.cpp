@@ -23,6 +23,9 @@ typedef boost::coroutines::symmetric_coroutine< void >  coro_t;
 int size = 2048 * 1024;
 static constexpr int num_requests = 100;
 
+uint8_t * source;
+uint8_t * destination;
+
 /* C API Batch Test Params */
 #define BUFFER_SIZE  4096 // 2 MB
 #define PADDING_SIZE 4096 // DML_OP_DUALCAST requirement "dst1 and dst2 address bits 11:0 must be the same"
@@ -132,8 +135,8 @@ void request_fn( coro_t::yield_type &yield){
   request_start_time[cur_sample] = __rdtsc();
   #endif
 
-  uint8_t * source = (uint8_t *)malloc(BUFFER_SIZE);;
-  uint8_t * destination = (uint8_t *)malloc(BUFFER_SIZE);;
+  source = (uint8_t *)malloc(BUFFER_SIZE);;
+  destination = (uint8_t *)malloc(BUFFER_SIZE);;
 
   for(int i = 0; i < BUFFER_SIZE; i++){
       source[i] = i % 256;
@@ -198,25 +201,12 @@ void request_fn( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   after_resume[cur_sample] = __rdtsc();
   #endif
-  for(int i = 0; i < BUFFER_SIZE; i++){
-      if(destination[i] != source[i]){
-          printf("Error: Operation result is incorrect.\n");
-          dml_finalize_job(dml_job_ptr);
-          free(dml_job_ptr);
-          exit(-1);
-      }
-  }
-  status = dml_finalize_job(dml_job_ptr);
-  if (DML_STATUS_OK != status) {
-      printf("An error (%u) occured during job finalization.\n", status);
-      free(dml_job_ptr);
-      exit(-1);
-  }
-  free(dml_job_ptr);
+
   yield(*c3);
 }
 
 void scheduler( coro_t::yield_type &yield){
+  dml_status_t status;
   #ifdef BREAKDOWN
   scheduler_start_time[cur_sample] = __rdtsc();
   #endif
@@ -236,6 +226,22 @@ void scheduler( coro_t::yield_type &yield){
   #ifdef BREAKDOWN
   scheduler_end_time[cur_sample] = __rdtsc();
   #endif
+
+  for(int i = 0; i < BUFFER_SIZE; i++){
+    if(destination[i] != source[i]){
+        printf("Error: Operation result is incorrect.\n");
+        dml_finalize_job(dml_job_ptr);
+        free(dml_job_ptr);
+        exit(-1);
+    }
+  }
+  status = dml_finalize_job(dml_job_ptr);
+  if (DML_STATUS_OK != status) {
+      printf("An error (%u) occured during job finalization.\n", status);
+      free(dml_job_ptr);
+      exit(-1);
+  }
+  free(dml_job_ptr);
 }
 
 
