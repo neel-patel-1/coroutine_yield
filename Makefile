@@ -14,7 +14,7 @@ baseline-ctx-switch: baseline-ctx-switch.cpp
 	$(CXX) -o baseline-ctx-switch baseline-ctx-switch.cpp $(LDD_FLAGS)  $(CXX_FLAGS) $(FLAGS)
 
 baseline-cpu: baseline-cpu.cpp
-	$(CXX) -o baseline-cpu baseline-cpu.cpp $(LDD_FLAGS)  $(CXX_FLAGS) $(FLAGS)
+	$(CXX) -o baseline-cpu baseline-cpu.cpp $(LDD_FLAGS)  $(CXX_FLAGS) $(FLAGS) -lz
 
 single-request-latency: single-request-latency.cpp
 	$(CXX) -o single-request-latency single-request-latency.cpp $(LDD_FLAGS)  $(CXX_FLAGS) $(FLAGS)
